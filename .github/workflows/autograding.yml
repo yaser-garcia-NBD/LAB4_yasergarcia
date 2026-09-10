@@ -1,0 +1,308 @@
+name: Evaluacion Automatica y Anti-Plagio Lab Video HTML5
+
+on: [push]
+
+jobs:
+  evaluacion-html:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Descargar codigo del estudiante
+        uses: actions/checkout@v3
+
+      - name: 2. Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: 3. Instalar BeautifulSoup4
+        run: |
+          pip install beautifulsoup4
+
+      - name: 4. Generar Script de Evaluacion y Anti-Plagio
+        run: |
+          cat << 'EOF' > evaluate.py
+          import os, sys, copy, hashlib, json, urllib.request
+          from bs4 import BeautifulSoup
+
+          # =========================================================================
+          # CONFIGURACIÓN DIRECTA DE SUPABASE (SIN DEPENDER DE SECRETS EN GITHUB)
+          # =========================================================================
+          SUPABASE_URL = "https://ikusdplwwvcbxgvevkvw.supabase.co"
+          SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlrdXNkcGx3d3ZjYnhndmV2a3Z3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5ODgyMjYsImV4cCI6MjEwNDU2NDIyNn0.TEA3ZOmZxv7zedc2hDZUaDoB0oGDVMXM2yh1M6D4YBc"
+
+          print("🔍 Iniciando evaluacion de index.html...\n")
+
+          if not os.path.exists("index.html"):
+              print("❌ ERROR CRÍTICO: No se encontró el archivo index.html en la raíz.")
+              sys.exit(1)
+
+          with open("index.html", "r", encoding="utf-8") as f:
+              content = f.read()
+
+          soup = BeautifulSoup(content, "html.parser")
+          score = 0
+          report = []
+
+          # ==========================================
+          # PARTE 1: ESTRUCTURA BASE Y METADATOS (10 PTS)
+          # ==========================================
+          p_base = 0
+          html_tag = soup.find("html")
+          if html_tag and html_tag.get("lang") == "es":
+              p_base += 3
+          else:
+              report.append("  ❌ [Parte 1] Falta la etiqueta <html lang=\"es\">.")
+
+          head_tag = soup.find("head")
+          if head_tag:
+              if soup.find("meta", attrs={"charset": lambda x: x and x.lower() == "utf-8"}):
+                  p_base += 2
+              else:
+                  report.append("  ❌ [Parte 1] Falta <meta charset=\"UTF-8\">.")
+
+              if soup.find("meta", attrs={"name": "viewport"}):
+                  p_base += 2
+              else:
+                  report.append("  ❌ [Parte 1] Falta <meta name=\"viewport\">.")
+
+              if soup.find("title") and len(soup.find("title").text.strip()) > 0:
+                  p_base += 3
+              else:
+                  report.append("  ❌ [Parte 1] Falta la etiqueta <title> con texto descriptivo.")
+
+          score += p_base
+          print(f"1. Estructura base y metadatos: {p_base}/10 pts")
+
+          # ==========================================
+          # PARTE 2: HEADER, NAVEGACIÓN Y BUSCADOR (15 PTS)
+          # ==========================================
+          p_header = 0
+          header_tag = soup.find("header")
+          if header_tag:
+              p_header += 3
+              logo_img = header_tag.find("img")
+              if logo_img and logo_img.find_parent("a") and logo_img.get("alt"):
+                  p_header += 4
+              else:
+                  report.append("  ❌ [Parte 2] El logo en <header> debe ser una <img> dentro de <a> con atributo alt.")
+
+              search_form = header_tag.find("form")
+              if search_form:
+                  search_input = search_form.find("input", attrs={"type": "search"}) or search_form.find("input", attrs={"name": "q"})
+                  if search_input and search_form.find("button"):
+                      p_header += 4
+                  else:
+                      report.append("  ❌ [Parte 2] El buscador debe incluir un <input type=\"search\"> y un <button>.")
+
+              nav_tag = header_tag.find("nav")
+              if nav_tag and nav_tag.find("ul") and len(nav_tag.find_all("li")) >= 3:
+                  p_header += 4
+              else:
+                  report.append("  ❌ [Parte 2] La navegación <nav> debe incluir <ul> con al menos 3 <li>.")
+          else:
+              report.append("  ❌ [Parte 2] Falta la etiqueta <header>.")
+
+          score += p_header
+          print(f"2. Header, Navegación y Buscador: {p_header}/15 pts")
+
+          # ==========================================
+          # PARTE 3: VIDEO, H1, DATOS Y CANAL (30 PTS)
+          # ==========================================
+          p_video = 0
+          main_tag = soup.find("main")
+          if main_tag:
+              p_video += 5
+              all_h1 = soup.find_all("h1")
+              if len(all_h1) == 1 and all_h1[0].find_parent("main"):
+                  p_video += 5
+              else:
+                  report.append("  ❌ [Parte 3] Debe haber exactamente UN <h1> en toda la página (dentro de <main>).")
+
+              video_player = main_tag.find("iframe") or main_tag.find("video")
+              if video_player:
+                  p_video += 8
+              else:
+                  report.append("  ❌ [Parte 3] No se encontró el reproductor de video (<iframe> o <video>).")
+
+              time_tag = main_tag.find("time")
+              if time_tag and time_tag.get("datetime"):
+                  p_video += 4
+              else:
+                  report.append("  ❌ [Parte 3] Falta la fecha con <time datetime=\"...\">.")
+
+              channel_btn = main_tag.find("button")
+              channel_img = main_tag.find("img")
+              if channel_btn and channel_img:
+                  p_video += 8
+              else:
+                  report.append("  ❌ [Parte 3] Falta la sección del canal (avatar, nombre y botón de suscripción).")
+          else:
+              report.append("  ❌ [Parte 3] Falta la etiqueta contenedora <main>.")
+
+          score += p_video
+          print(f"3. Video, H1, Datos y Canal: {p_video}/30 pts")
+
+          # ==========================================
+          # PARTE 4: FORMULARIO Y COMENTARIOS (20 PTS)
+          # ==========================================
+          p_comments = 0
+          if main_tag:
+              textarea = main_tag.find("textarea")
+              label = main_tag.find("label")
+              if textarea and label and label.get("for") == textarea.get("id"):
+                  p_comments += 8
+              else:
+                  report.append("  ❌ [Parte 4] El <label> debe estar vinculado con for/id al <textarea>.")
+
+              comment_articles = [a for a in main_tag.find_all("article") if a.find("time") or a.find("p")]
+              if len(comment_articles) >= 3:
+                  p_comments += 12
+              else:
+                  report.append("  ❌ [Parte 4] Se requieren al menos 3 comentarios en etiquetas <article>.")
+
+          score += p_comments
+          print(f"4. Formulario y Comentarios: {p_comments}/20 pts")
+
+          # ==========================================
+          # PARTE 5: ASIDE Y VIDEOS SUGERIDOS (15 PTS)
+          # ==========================================
+          p_aside = 0
+          aside_tag = soup.find("aside")
+          if aside_tag:
+              if not aside_tag.find_parent("main"):
+                  p_aside += 5
+                  suggested_articles = aside_tag.find_all("article")
+                  if len(suggested_articles) >= 4:
+                      p_aside += 10
+                  else:
+                      report.append("  ❌ [Parte 5] El <aside> debe contener al menos 4 videos sugeridos en etiquetas <article>.")
+              else:
+                  report.append("  ❌ [Parte 5] La etiqueta <aside> debe estar FUERA de <main> (como hermano).")
+          else:
+              report.append("  ❌ [Parte 5] Falta la etiqueta <aside> para videos sugeridos.")
+
+          score += p_aside
+          print(f"5. Aside y Videos Sugeridos: {p_aside}/15 pts")
+
+          # ==========================================
+          # PARTE 6: FOOTER Y ACCESIBILIDAD (10 PTS)
+          # ==========================================
+          p_footer = 0
+          footer_tag = soup.find("footer")
+          if footer_tag and not footer_tag.find_parent("main"):
+              p_footer += 5
+              if "©" in footer_tag.text or "&copy;" in content or "&#169;" in content:
+                  p_footer += 2
+
+          all_imgs = soup.find_all("img")
+          imgs_without_alt = [img for img in all_imgs if not img.get("alt")]
+          if len(all_imgs) > 0 and len(imgs_without_alt) == 0:
+              p_footer += 3
+          else:
+              report.append(f"  ❌ [Parte 6] Todas las imágenes <img> deben llevar el atributo alt. Sin alt: {len(imgs_without_alt)}")
+
+          score += p_footer
+          print(f"6. Footer y Atributos de Accesibilidad: {p_footer}/10 pts")
+
+          # ==========================================
+          # VERIFICACIÓN ANTI-PLAGIO VÍA SUPABASE
+          # ==========================================
+          student_actor = os.environ.get("GITHUB_ACTOR", "desconocido")
+
+          print("\n🛡️ Conectando para validación anti-plagio...")
+          tags_sequence = "-".join([tag.name for tag in soup.find_all(True)])
+          html_hash = hashlib.sha256(tags_sequence.encode("utf-8")).hexdigest()
+
+          try:
+              # 1. Consultar entregas previas
+              url_get = f"{SUPABASE_URL}/rest/v1/entregas_html?hash_estructura=eq.{html_hash}"
+              req_get = urllib.request.Request(
+                  url_get,
+                  headers={
+                      "apikey": SUPABASE_KEY,
+                      "Authorization": f"Bearer {SUPABASE_KEY}"
+                  }
+              )
+              with urllib.request.urlopen(req_get) as response:
+                  matches = json.loads(response.read().decode("utf-8"))
+
+              es_copia = any(m.get("estudiante") != student_actor for m in matches)
+
+              if es_copia:
+                  autor_original = next(m.get("estudiante") for m in matches if m.get("estudiante") != student_actor)
+                  print(f"🚨 ALERTA DE PLAGIO DETECTADA: Estructura HTML idéntica a la de '{autor_original}'.")
+
+                  # 2. Guardar log de infracción en la BD
+                  try:
+                      data_plagio = json.dumps({
+                          "estudiante_infractor": student_actor,
+                          "estudiante_original": autor_original,
+                          "hash_estructura": html_hash
+                      }).encode("utf-8")
+
+                      req_log = urllib.request.Request(
+                          f"{SUPABASE_URL}/rest/v1/alertas_plagio",
+                          data=data_plagio,
+                          headers={
+                              "apikey": SUPABASE_KEY,
+                              "Authorization": f"Bearer {SUPABASE_KEY}",
+                              "Content-Type": "application/json",
+                              "Prefer": "return=minimal"
+                          },
+                          method="POST"
+                      )
+                      with urllib.request.urlopen(req_log) as _:
+                          pass
+                      print("📌 Incidencia registrada en la tabla 'alertas_plagio' de SB.")
+                  except Exception as err_log:
+                      print("❌ Error al guardar log en alertas_plagio:", err_log)
+
+                  report.append(f"  ❌ [PLAGIO DETECTADO] Código HTML con estructura idéntica al entregado por: {autor_original}")
+                  score = 0
+              else:
+                  # 3. Registrar primera entrega válida
+                  post_data = json.dumps({"estudiante": student_actor, "hash_estructura": html_hash}).encode("utf-8")
+                  req_post = urllib.request.Request(
+                      f"{SUPABASE_URL}/rest/v1/entregas_html",
+                      data=post_data,
+                      headers={
+                          "apikey": SUPABASE_KEY,
+                          "Authorization": f"Bearer {SUPABASE_KEY}",
+                          "Content-Type": "application/json",
+                          "Prefer": "return=minimal"
+                      },
+                      method="POST"
+                  )
+                  with urllib.request.urlopen(req_post) as _:
+                      pass
+                  print(f"✅ Firma de estructura registrada exitosamente para '{student_actor}'.")
+
+          except Exception as err_sp:
+              print("❌ ERROR DE CONEXIÓN A SB:", err_sp)
+
+          # ==========================================
+          # RESULTADO FINAL Y DESGLOSE
+          # ==========================================
+          print("\n------------------------------------------")
+          print(f"📊 CALIFICACIÓN FINAL: {score} / 100 PTS")
+          print("------------------------------------------\n")
+
+          if report:
+              print("📌 Observaciones por corregir:")
+              for msg in report:
+                  print(msg)
+              print("\n")
+
+          if score < 71:
+              print("❌ EVALUACIÓN FALLIDA: Puntaje menor a 71 pts (Mínimo requerido para aprobar).")
+              sys.exit(1)
+
+          print("🎉 ¡FELICITACIONES! Laboratorio aprobado exitosamente.")
+          sys.exit(0)
+          EOF
+
+      - name: 5. Ejecutar Evaluacion
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: python evaluate.py
